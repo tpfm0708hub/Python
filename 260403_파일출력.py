@@ -115,4 +115,4 @@ print(df_006.head(6))
 import os
 
 # 조건설정 전 df_005에 대해 pickle 형식으로 저장
-df_006.to_pickle(os.path.join('d:\\','github','260403_파일출력.pkl'))
+df_005.to_pickle(os.path.join('d:\\','github','260403_파일출력.pkl'))
