@@ -70,12 +70,6 @@ tbl_001=pd.DataFrame({
 
 df_003=pd.concat([df_002,tbl_001],axis=0)
 
-tbl_001=pd.DataFrame({
-    '순번':range(501,1000+1),
-    '주소':address_001,
-    '수입':income_001
-    })
-
 np.random.seed(3456)
 
 # df_03 행수 만큼의 성별 열 생성
