@@ -68,6 +68,7 @@ tbl_001=pd.DataFrame({
     '수입':income_001
     })
 
+# df_02와 같은 열 기준으로 병합 
 df_003=pd.concat([df_002,tbl_001],axis=0)
 
 np.random.seed(3456)
