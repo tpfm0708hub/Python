@@ -1,0 +1,24 @@
+# 활용자료: "국민건강영양조사 원시자료(2024년) -	검진조사, 건강설문조사, 영양조사", 최종 수정일: 2026-02-27
+# URL: https://knhanes.kdca.go.kr/knhanes/rawDataDwnld/rawDataDwnld.do
+import pandas as pd
+import numpy as np
+
+# 2024 국민건강영양조사 sas 불러오기
+df_001 = pd.read_sas(r"D:/github/hn24_all.sas7bdat")
+
+# 저장 공간 생성
+col_names = []
+
+# 해당 공간 내 열 이름 출력
+for col_01 in df_001.columns.tolist():
+    col_names.append(col_01)
+
+# 열이름 'sex'(성별) 및 'region'(시도)를 col_idx_01로 지정
+col_idx_01 = ['sex','region']
+# 전체 열 이름 중, col_idx_01에 해당하는 열 이름 출력
+col_idx_02 = [col_names.index(name) for name in col_idx_01]
+
+# 전체 데이터 중, 지정한 열에 해당하는 데이터 분리
+df_002 = df_001.iloc[:,col_idx_02]
+df_002 = df_001.iloc[:,col_idx_02[1]]
+
