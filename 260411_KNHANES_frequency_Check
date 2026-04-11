@@ -1,0 +1,47 @@
+# 활용자료: "국민건강영양조사 원시자료(2024년) -	검진조사, 건강설문조사, 영양조사", 최종 수정일: 2026-02-27
+# URL: https://knhanes.kdca.go.kr/knhanes/rawDataDwnld/rawDataDwnld.do
+import pandas as pd
+import numpy as np
+
+# 2024 국민건강영양조사 sas 불러오기
+df_001 = pd.read_sas(r"D:/github/hn24_all.sas7bdat")
+
+# 저장 공간 생성
+col_names = []
+
+# 해당 공간 내 열 이름 출력
+for col_01 in df_001.columns.tolist():
+    col_names.append(col_01)
+
+# 열이름 'sex'(성별) 및 'region'(시도)를 col_idx_01로 지정
+col_idx_01 = ['sex','region']
+# 전체 열 이름 중, col_idx_01에 해당하는 열 이름 출력
+col_idx_02 = [col_names.index(name) for name in col_idx_01]
+
+# 전체 데이터 중, 지정한 열에 해당하는 데이터 분리
+df_002 = df_001.iloc[:,col_idx_02]
+df_002 = df_001.iloc[:,col_idx_02[1]]
+
+# 분석열 추가
+# sex: 성별, age: 연령, ainc: 월평균가구총소득, marri_2: 결혼상태,
+# region: 17개 시도, town_t: 동/읍면 구분
+col_idx_01 = ['sex', 'age', 'ainc', 'marri_2', 'region', 'town_t']
+col_idx_02 = [col_names.index(name) for name in col_idx_01]
+
+# 해당하는 데이터 생성
+df_002 = df_001.iloc[:,col_idx_02]
+
+# 생성 확인
+print(df_002.head())
+#   sex   age        ainc  marri_2  region  town_t
+#0  1.0  38.0  613.333333      1.0     1.0     1.0
+#1  2.0  34.0  613.333333      1.0     1.0     1.0
+#2  1.0   6.0  613.333333     88.0     1.0     1.0
+#3  1.0   6.0  613.333333     88.0     1.0     1.0
+#4  2.0   4.0  613.333333     88.0     1.0     1.0
+
+print(df_002.iloc[:,0].value_counts(dropna=False))
+#sex
+#2.0    3927
+#1.0    3070
+#Name: count, dtype: int64
