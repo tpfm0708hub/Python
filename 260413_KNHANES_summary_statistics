@@ -1,0 +1,52 @@
+# 활용자료: "국민건강영양조사 원시자료(2024년) -	검진조사, 건강설문조사, 영양조사", 최종 수정일: 2026-02-27
+# URL: https://knhanes.kdca.go.kr/knhanes/rawDataDwnld/rawDataDwnld.do
+import pandas as pd
+import numpy as np
+
+# 2024 국민건강영양조사 sas 불러오기
+df_001 = pd.read_sas(r"D:/github/hn24_all.sas7bdat")
+
+# 저장 공간 생성
+col_names = []
+
+# 해당 공간 내 열 이름 출력
+for col_01 in df_001.columns.tolist():
+    col_names.append(col_01)
+
+# 분석열 추가
+# sex: 성별, age: 연령, ainc_1: 월평균가구총소득, marri_2: 결혼상태,
+# region: 17개 시도, town_t: 동/읍면 구분
+col_idx_01 = ['sex', 'age', 'ainc_1', 'marri_2', 'region', 'town_t']
+col_idx_02 = [col_names.index(name) for name in col_idx_01]
+
+# 해당하는 데이터 생성
+df_002 = df_001.iloc[:,col_idx_02]
+
+#  'marri_2' 결측 처리
+df_002.iloc[:,3] = df_002.iloc[:,3].replace([8, 99], np.nan)
+
+# 세번째 변수('ainc') 요약통계 확인
+print(df_002.iloc[:,2].describe())
+#count      6996.000000
+#mean      12090.058891
+#std       78757.789165
+#min          17.000000
+#25%        1178.000000
+#50%        5087.500000
+#75%        9000.000000
+#max      999999.000000
+
+# 이용지침서 기준: 999999. 모름·무응답
+# '모름' 및 '무응답' 결측 처리
+df_002.iloc[:,2] = df_002.iloc[:,2].replace([999999], np.nan)
+
+# 결과 확인
+print(df_002.iloc[:,2].describe())
+#count     6952.000000
+#mean      5837.470656
+#std       5007.615086
+#min         17.000000
+#25%       1150.000000
+#50%       5022.000000
+#75%       9000.000000
+#max      18000.000000
