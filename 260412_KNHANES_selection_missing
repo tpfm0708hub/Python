@@ -14,9 +14,9 @@ for col_01 in df_001.columns.tolist():
     col_names.append(col_01)
 
 # 분석열 추가
-# sex: 성별, age: 연령, ainc: 월평균가구총소득, marri_2: 결혼상태,
+# sex: 성별, age: 연령, ainc_1: 월평균가구총소득, marri_2: 결혼상태,
 # region: 17개 시도, town_t: 동/읍면 구분
-col_idx_01 = ['sex', 'age', 'ainc', 'marri_2', 'region', 'town_t']
+col_idx_01 = ['sex', 'age', 'ainc_1', 'marri_2', 'region', 'town_t']
 col_idx_02 = [col_names.index(name) for name in col_idx_01]
 
 # 해당하는 데이터 생성
