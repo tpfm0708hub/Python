@@ -25,7 +25,7 @@ df_002 = df_001.iloc[:,col_idx_02]
 #  'marri_2' 결측 처리
 df_002.iloc[:,3] = df_002.iloc[:,3].replace([8, 99], np.nan)
 
-# 세번째 변수('ainc') 요약통계 확인
+# 세번째 변수('ainc_1') 요약통계 확인
 print(df_002.iloc[:,2].describe())
 #count      6996.000000
 #mean      12090.058891
