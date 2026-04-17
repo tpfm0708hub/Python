@@ -45,10 +45,10 @@ def col_adj_01(db_01, col_01):
     return tbl_04
 
 # 함수 적용
-tbl_01 = col_adj_01(df_002, 'sex')
-tbl_02 = col_adj_01(df_002, 'marri_2')
-tbl_03 = col_adj_01(df_002, 'region')
-tbl_04 = col_adj_01(df_002, 'town_t')
+tbl_01 = col_adj_01(df_002, col_idx_01[0])
+tbl_02 = col_adj_01(df_002, col_idx_01[3])
+tbl_03 = col_adj_01(df_002, col_idx_01[4])
+tbl_04 = col_adj_01(df_002, col_idx_01[5])
 
 # 결과 출력
 print(tbl_01);print(tbl_02);print(tbl_03);print(tbl_04)
