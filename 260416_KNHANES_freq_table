@@ -23,7 +23,7 @@ col_idx_02 = [col_names.index(name) for name in col_idx_01]
 df_002 = df_001.iloc[:, col_idx_02].copy()
 
 #  'marri_2' 결측 처리
-df_002.iloc[:, 3] = df_002.iloc[:, 3].replace([8, 99], np.nan)
+df_002.iloc[:, 3] = df_002.iloc[:, 3].replace([8, 88, 99], np.nan)
 
 #  'ainc_1' 결측 처리
 df_002.iloc[:, 2] = df_002.iloc[:, 2].replace([999999], np.nan)
