@@ -50,9 +50,10 @@ tbl_02 = col_adj_01(df_002, col_idx_01[3])
 tbl_03 = col_adj_01(df_002, col_idx_01[4])
 tbl_04 = col_adj_01(df_002, col_idx_01[5])
 
-# 범주형 처리: '성별', '결혼상태', '17개 시도', '동/읍면 구분'
+# 범주형 처리: '성별', '17개 시도', '동/읍면 구분'
+# 응답이 다양한 '결혼상태'에 대해서는 별도로 처리
 df_003 = df_002.copy()
-df_003[[col_idx_01[0],col_idx_01[3],col_idx_01[4],col_idx_01[5]]] = df_003[[col_idx_01[0],col_idx_01[3],col_idx_01[4],col_idx_01[5]]].astype('category')
+df_003[[col_idx_01[0], col_idx_01[4], col_idx_01[5]]] = df_003[[col_idx_01[0], col_idx_01[4], col_idx_01[5]]].astype('category')
 
 # 적용 전
 print(df_002.apply(lambda x: x.dtype))
@@ -68,6 +69,6 @@ print(df_003.apply(lambda x: x.dtype))
 #sex        category
 #age         float64
 #ainc_1      float64
-#marri_2    category
+#marri_2     float64
 #region     category
 #town_t     category
