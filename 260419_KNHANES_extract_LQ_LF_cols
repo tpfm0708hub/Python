@@ -1,0 +1,73 @@
+# 활용자료: "국민건강영양조사 원시자료(2024년) - 검진조사, 건강설문조사, 영양조사", 최종 수정일: 2026-02-27
+# URL: https://knhanes.kdca.go.kr/knhanes/rawDataDwnld/rawDataDwnld.do
+import pandas as pd
+import numpy as np
+
+# 2024 국민건강영양조사 sas 불러오기
+df_001 = pd.read_sas(r"D:/github/hn24_all.sas7bdat")
+
+# 저장 공간 생성
+col_names = []
+
+# 해당 공간 내 열 이름 출력
+for col_01 in df_001.columns.tolist():
+    col_names.append(col_01)
+
+# 분석열 추가
+# sex: 성별, age: 연령, ainc_1: 월평균가구총소득, marri_2: 결혼상태,
+# region: 17개 시도, town_t: 동/읍면 구분
+col_idx_01 = ['sex', 'age', 'ainc_1', 'marri_2', 'region', 'town_t']
+col_idx_02 = [col_names.index(name) for name in col_idx_01]
+
+# 해당하는 데이터 생성 (경고 메시지 방지를 위해 .copy() 사용)
+df_002 = df_001.iloc[:, col_idx_02].copy()
+
+#  'marri_2' 결측 처리
+df_002.iloc[:, 3] = df_002.iloc[:, 3].replace([8, 88, 99], np.nan)
+
+#  'ainc_1' 결측 처리
+df_002.iloc[:, 2] = df_002.iloc[:, 2].replace([999999], np.nan)
+
+#   빈도에 따른 백분율 부여
+def col_adj_01(db_01, col_01):
+    tbl_01 = db_01[col_01].value_counts(dropna=False).reset_index(name='n')
+    total_01 = tbl_01['n'].sum()
+    tbl_01['per'] = ((tbl_01['n'] / total_01) * 100).map('{:.2f}%'.format)
+    tbl_02 = pd.DataFrame({
+        col_01: ['합계'], 'n': [total_01], 'per': ['100%']
+        })
+    tbl_03 = pd.concat([tbl_01, tbl_02],ignore_index=True)
+    tbl_03['fmt'] = tbl_03['n'].astype(str) + '(' + tbl_03['per'] + ')'
+    
+    tbl_04 = tbl_03.copy()
+    tbl_04 = tbl_04[[col_01, 'fmt']]
+    
+    return tbl_04
+
+# 함수 적용
+tbl_01 = col_adj_01(df_002, col_idx_01[0])
+tbl_02 = col_adj_01(df_002, col_idx_01[3])
+tbl_03 = col_adj_01(df_002, col_idx_01[4])
+tbl_04 = col_adj_01(df_002, col_idx_01[5])
+
+# 범주형 처리: '성별', '결혼상태', '17개 시도', '동/읍면 구분'
+df_003 = df_002.copy()
+df_003[[col_idx_01[0], col_idx_01[4], col_idx_01[5]]] = df_003[[col_idx_01[0], col_idx_01[4], col_idx_01[5]]].astype('category')
+
+# adj_01: region을 경인지역 여부에 따라 구분(0: 경인, 1: 그외)
+adj_001 = pd.DataFrame()
+adj_001['region_01'] = np.where(df_003[col_idx_01[4]].isin([1, 4, 9]), 0, 1)
+
+# 범주형 데이터와 병합
+df_003['region_01'] = adj_001['region_01'].astype('category')
+
+# "노인생활기능척도"(LQ_LF1-10) 데이터 추출
+print([col for col in df_001.columns if 'LQ_LF' in col])
+# 출력 결과
+# ['LQ_LF1', 'LQ_LF2', 'LQ_LF3', 'LQ_LF4', 'LQ_LF5', 'LQ_LF6', 'LQ_LF7', 'LQ_LF8', 'LQ_LF9', 'LQ_LF10', 'LQ_LF_S']
+# 11번째, 노인생활기능척도 점수 제거
+ext_col_01 = [col for col in df_001.columns if 'LQ_LF' in col][0:10]
+ext_col_02 = df_001.loc[:,ext_col_01]
+
+# 기존 데이터와 병합
+df_004 = pd.concat([df_003, ext_col_02], ignore_index=True)
