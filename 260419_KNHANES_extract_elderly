@@ -70,7 +70,13 @@ ext_col_01 = [col for col in df_001.columns if 'LQ_LF' in col][0:10]
 ext_col_02 = df_001.loc[:,ext_col_01]
 
 # 기존 데이터와 병합
-df_004 = pd.concat([df_003, ext_col_02], ignore_index=True)
+df_004 = pd.concat([df_003, ext_col_02], axis = 1)
+
+# 중복열 확인
+check_01 = df_004.columns[df_004.columns.duplicated()]
+print(len(check_01))
+# 출력 결과
+# 0
 
 # 노인(65세 이상) 추출
 df_005 = df_004[df_004['age'] >= 65].copy()
