@@ -1,0 +1,144 @@
+# 활용자료: "국민건강영양조사 원시자료(2024년) - 검진조사, 건강설문조사, 영양조사", 최종 수정일: 2026-02-27
+# URL: https://knhanes.kdca.go.kr/knhanes/rawDataDwnld/rawDataDwnld.do
+import pandas as pd
+import numpy as np
+
+# 2024 국민건강영양조사 sas 불러오기
+df_001 = pd.read_sas(r"D:/github/hn24_all.sas7bdat")
+
+# 저장 공간 생성
+col_names = []
+
+# 해당 공간 내 열 이름 출력
+for col_01 in df_001.columns.tolist():
+    col_names.append(col_01)
+
+# 분석열 추가
+# sex: 성별, age: 연령, ainc_1: 월평균가구총소득, marri_2: 결혼상태,
+# region: 17개 시도, town_t: 동/읍면 구분
+col_idx_01 = ['sex', 'age', 'ainc_1', 'marri_2', 'region', 'town_t']
+col_idx_02 = [col_names.index(name) for name in col_idx_01]
+
+# 해당하는 데이터 생성 (경고 메시지 방지를 위해 .copy() 사용)
+df_002 = df_001.iloc[:, col_idx_02].copy()
+
+#  'marri_2' 결측 처리
+df_002.iloc[:, 3] = df_002.iloc[:, 3].replace([8, 88, 99], np.nan)
+
+#  'ainc_1' 결측 처리
+df_002.iloc[:, 2] = df_002.iloc[:, 2].replace([999999], np.nan)
+
+#   빈도에 따른 백분율 부여
+def col_adj_01(db_01, col_01):
+    tbl_01 = db_01[col_01].value_counts(dropna=False).reset_index(name='n')
+    total_01 = tbl_01['n'].sum()
+    tbl_01['per'] = ((tbl_01['n'] / total_01) * 100).map('{:.2f}%'.format)
+    tbl_02 = pd.DataFrame({
+        col_01: ['합계'], 'n': [total_01], 'per': ['100%']
+        })
+    tbl_03 = pd.concat([tbl_01, tbl_02],ignore_index=True)
+    tbl_03['fmt'] = tbl_03['n'].astype(str) + '(' + tbl_03['per'] + ')'
+    
+    tbl_04 = tbl_03.copy()
+    tbl_04 = tbl_04[[col_01, 'fmt']]
+    
+    return tbl_04
+
+# 함수 적용
+tbl_01 = col_adj_01(df_002, col_idx_01[0])
+tbl_02 = col_adj_01(df_002, col_idx_01[3])
+tbl_03 = col_adj_01(df_002, col_idx_01[4])
+tbl_04 = col_adj_01(df_002, col_idx_01[5])
+
+# 범주형 처리: '성별', '결혼상태', '17개 시도', '동/읍면 구분'
+df_003 = df_002.copy()
+df_003[[col_idx_01[0], col_idx_01[4], col_idx_01[5]]] = df_003[[col_idx_01[0], col_idx_01[4], col_idx_01[5]]].astype('category')
+
+# adj_01: region을 경인지역 여부에 따라 구분(0: 경인, 1: 그외)
+adj_001 = pd.DataFrame()
+adj_001['region_01'] = np.where(df_003[col_idx_01[4]].isin([1, 4, 9]), 0, 1)
+
+# 범주형 데이터와 병합
+df_003['region_01'] = adj_001['region_01'].astype('category')
+
+# 11번째, 노인생활기능척도 점수 제거
+ext_col_01 = [col for col in df_001.columns if 'LQ_LF' in col][0:10]
+ext_col_02 = df_001.loc[:,ext_col_01]
+
+# 기존 데이터와 병합
+df_004 = pd.concat([df_003, ext_col_02], axis = 1)
+
+# 노인(65세 이상) 추출
+df_005 = df_004[df_004['age'] >= 65].copy()
+
+# 'marri_2' 결측값에 대해 별도 범주(5) 지정
+df_006 = df_005.copy()
+df_006['marri_2'] = df_005['marri_2'].fillna(5).astype('category')
+
+# 노인생활기능척도(LQ_LF1~10)의 응답값 9를 일괄 결측 처리
+df_007 = df_006.copy()
+LQ_LF_col_01 = [f'LQ_LF{i}' for i in range(1, 11)]
+df_007[LQ_LF_col_01] = df_006[LQ_LF_col_01].replace(9, np.nan)
+
+# 결측값 일괄 처리
+fit_001 = df_007.dropna()
+
+from sklearn.preprocessing import OneHotEncoder
+
+# marri_2 더미열 생성
+# sparse_output=False: 결과를 배열로 출력
+col_01_1 = OneHotEncoder(sparse_output=False, categories = [[1, 2, 3, 4, 5]], drop = 'first')
+
+# fit_001[['marri_2']]: 더미 처리를 위해 2차원 배열 입력
+col_01_2 = col_01_1.fit_transform(fit_001[['marri_2']])
+col_01_3 = pd.DataFrame(col_01_2, columns = [
+    # 더미열 열이름 부여
+    '결혼상태_별거', '결혼상태_사별', '결혼상태_이혼', '결혼상태_무응답'],
+
+    #2. 유배우자, 별거
+    #3. 사별
+    #4. 이혼
+    #5. 무응답
+    index = fit_001.index)
+
+# 더미열 병합
+fit_002 = pd.concat([fit_001.drop(columns=['marri_2']), col_01_3], axis = 1)
+
+# 노인생활기능척도 점수 연산(LQ_LF_S)
+fit_003 = fit_002.copy()
+fit_003['LQ_LF_S'] = fit_003[[f'LQ_LF{i}' for i in range(1, 11)]].sum(axis = 1) * 2.5
+fit_003 = fit_003.drop(columns = [f'LQ_LF{i}' for i in range(1, 11)])
+# df에 남아 있는 region 제거
+fit_003 = fit_003.drop(columns = ['region'])
+
+# LQ_LF_S에 대한 다중공선성 확인
+from statsmodels.stats.outliers_influence import variance_inflation_factor
+import statsmodels.api as sm
+
+# 종속변수 'LQ_LF_S'에 대한 회귀모델 구성
+# VIF 연산을 위해 모든 데이터를 숫자형으로 변환
+form_01 = fit_003.drop(columns=['LQ_LF_S']).apply(pd.to_numeric, errors = 'coerce')
+
+# 상수항 추가
+vif_target_01 = sm.add_constant(form_01)
+
+form_02 = pd.DataFrame()
+form_02['구분'] = vif_target_01.columns
+form_02['VIF'] = [
+    variance_inflation_factor(vif_target_01.values, i)
+    for i in range(vif_target_01.shape[1])
+    ]
+
+form_02 = form_02[form_02['구분'] != 'const'].reset_index(drop=True)
+print(form_02)
+# 출력 결과
+#          구분       VIF
+#0        sex  1.209605
+#1        age  1.201549
+#2     ainc_1  1.134277
+#3     town_t  1.224530
+#4  region_01  1.250965
+#5    결혼상태_별거  1.008351
+#6    결혼상태_사별  1.368651
+#7    결혼상태_이혼  1.061726
+#8   결혼상태_무응답  1.017680
