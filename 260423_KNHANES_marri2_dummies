@@ -87,14 +87,14 @@ from sklearn.preprocessing import OneHotEncoder
 
 # marri_2 더미열 생성
 # sparse_output=False: 결과를 배열로 출력
-col_01_1 = OneHotEncoder(sparse_output=False, categories = [[1, 2, 3, 4, 5]])
+col_01_1 = OneHotEncoder(sparse_output=False, categories = [[1, 2, 3, 4, 5]], drop = 'first')
 
 # fit_001[['marri_2']]: 더미 처리를 위해 2차원 배열 입력
 col_01_2 = col_01_1.fit_transform(fit_001[['marri_2']])
 col_01_3 = pd.DataFrame(col_01_2, columns = [
     # 더미열 열이름 부여
-    '결혼상태_동거', '결혼상태_별거', '결혼상태_사별', '결혼상태_이혼', '결혼상태_무응답'],
-    #1. 유배우자, 동거
+    '결혼상태_별거', '결혼상태_사별', '결혼상태_이혼', '결혼상태_무응답'],
+
     #2. 유배우자, 별거
     #3. 사별
     #4. 이혼
@@ -106,6 +106,6 @@ fit_002 = pd.concat([fit_001.drop(columns=['marri_2']), col_01_3], axis = 1)
 
 # 열이름 변경 확인
 print(fit_002.columns.tolist())
-#['sex', 'age', 'ainc_1', 'region', 'town_t', 'region_01', 'LQ_LF1', 'LQ_LF2',
-# 'LQ_LF3', 'LQ_LF4', 'LQ_LF5', 'LQ_LF6', 'LQ_LF7', 'LQ_LF8', 'LQ_LF9', 'LQ_LF10',
-# '결혼상태_동거', '결혼상태_별거', '결혼상태_사별', '결혼상태_이혼', '결혼상태_무응답'
+#'sex', 'age', 'ainc_1', 'region', 'town_t', 'region_01', 
+#'LQ_LF1', 'LQ_LF2', 'LQ_LF3', 'LQ_LF4', 'LQ_LF5', 'LQ_LF6', 'LQ_LF7', 'LQ_LF8', 'LQ_LF9', 'LQ_LF10', 
+#'결혼상태_별거', '결혼상태_사별', '결혼상태_이혼', '결혼상태_무응답'
