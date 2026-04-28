@@ -22,6 +22,6 @@ if __name__ == '__main__':
     with ProcessPoolExecutor(max_workers = cl) as executor:
         #   경로 내 각 파일에 대해 func_read_csv() 일괄 적용
         results = list(executor.map(func_read_csv, df_list_001))
-        
-    df_001 = pd.concat(results, ignore_index = True)
-        
+
+    #   불러온 개별 파일에 대해 하나의 데이터로 병합
+    df_001 = pd.concat(results, axis=0, ignore_index = True)
