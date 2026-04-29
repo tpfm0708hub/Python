@@ -1,4 +1,4 @@
-# 활용자료: 네이버 경제 뉴스 기사(2026.01~03.)
+# 활용자료: 네이버 경제 뉴스 기사(2026.01.~2026.03.)
 
 import multiprocessing
 import pandas as pd
@@ -24,4 +24,4 @@ if __name__ == '__main__':
         results = list(executor.map(func_read_csv, df_list_001))
 
     #   불러온 개별 파일에 대해 하나의 데이터로 병합
-    df_001 = pd.concat(results, axis=0, ignore_index = True)
+    df_001 = pd.concat(results, axis = 0, ignore_index = True)
