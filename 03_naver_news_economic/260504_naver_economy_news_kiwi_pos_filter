@@ -10,7 +10,7 @@ TARGET_DATES = pd.date_range(start='2026-01-01', end='2026-04-30').strftime('%y%
 TARGET_KEYWORD = '005930'#  예시: 삼성전자 종목코드
 
 def filter_str_01(file_path):
-    # 모든 열에 대해 문자형태로
+    # 모든 열에 대해 문자형태로 불러오기
     df_01 = pd.read_csv(file_path, dtype=str)
     
     # '본문' 열에 키워드가 포함된 행만 필터링
