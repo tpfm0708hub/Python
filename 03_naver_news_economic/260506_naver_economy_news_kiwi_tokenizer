@@ -1,0 +1,130 @@
+# 활용자료: 네이버 경제 뉴스 기사(2026.01.01~2026.04.30)
+
+import multiprocessing
+import pandas as pd
+from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor
+from kiwipiepy import Kiwi
+from collections import Counter
+
+#   날짜별 추출범위 및 포함 키워드 설정
+TARGET_DATES = pd.date_range(start='2026-01-01', end='2026-04-30').strftime('%y%m%d').tolist()#  예시 날짜범
+TARGET_KEYWORD = '005930'#  예시: 삼성전자 종목코드
+
+def filter_str_01(file_path):
+    # 모든 열에 대해 문자형태로
+    df_01 = pd.read_csv(file_path, dtype=str)
+    
+    # '본문' 열에 키워드가 포함된 행만 필터링
+    df_02 = df_01[df_01['본문'].str.contains(TARGET_KEYWORD, na=False)]
+    
+    return df_02
+
+if __name__ == '__main__':
+    path_001 = Path('D:/네이버뉴스/기사/경제')
+    
+    # file.stem: '네이버_경제_260101' 형태의 문자열 반환
+    df_list_001 = [
+        file for file in path_001.rglob('*.csv')
+        if any(date in file.stem for date in TARGET_DATES)
+    ]
+    
+    cl = multiprocessing.cpu_count() - 1
+    
+    # 병렬 처리
+    with ThreadPoolExecutor(max_workers=cl) as executor:
+        results = list(executor.map(filter_str_01, df_list_001))
+
+    
+    df_001 = pd.concat(results, axis=0, ignore_index=True)
+    
+
+#   상위 5개 언론사별 발행 건수 확인
+publisher_cnt = df_001['언론사'].value_counts()
+
+#   발행 건수 100건 이상 언론사 명단 생성
+publisher_over_100 = publisher_cnt[publisher_cnt >= 100].index.tolist()
+
+#   발행 건수 100건 이상에 해당하는 언론사 필터링
+df_002 = df_001[df_001['언론사'].isin(publisher_over_100)]
+
+#   '일자' 열 datetime으로 변환
+df_002['일자'] = pd.to_datetime(df_002['일자'])
+
+#   '월별' 열 및 '주차별'(해당 년도) 열 생성
+df_002['월별'] = df_002['일자'].dt.strftime('%m월')
+df_002['주차별'] = df_002['일자'].dt.strftime('%V주차')
+
+#   변수생성 결과 확인
+#print(df_002.loc[:, ['일자', '월별', '주차별']].tail())
+
+#   2026년 03월 기사만 추출
+df_003 = df_002[df_002['월별'] == '03월']
+
+#   필터링 결과 확인
+#print(df_003['월별'].value_counts())
+
+#   kiwipiepy 활용, 형태소 분석 진행
+kiwi = Kiwi()
+result = []
+
+#for text in df_003["본문"]:
+#    tokens = kiwi.tokenize(text)
+#    token_list = [token.form for token in tokens if len(token.form) > 1]
+#    result.append(token_list)
+
+#   분석 진행에 사용할 품사 설정
+#   대상품사: 일반명사, 고유명사, 동사, 형용사
+stnd_pos = ['NNG', 'NNP', 'VV', 'VA']
+#   불용어 적용: 
+stop_words = ['삼성전자', '대비', '따르']
+
+for text in df_003["본문"]:
+    tokens = kiwi.tokenize(text)
+    token_list = [token.form for token in tokens 
+                  if token.tag in stnd_pos and len(token.form) > 1 and
+                  token.form not in stop_words]
+    result.append(token_list)
+    
+#   형태소 분석 결과 'tokens'열로 저장
+df_003['tokens'] = result
+
+#   키워드별 빈도수 확인
+#   list 형의 토큰 추출 후 하나의 list
+all_token = [word for tokens in df_003['tokens'] for word in tokens]
+
+#   단어별 빈도 확인
+count_tokens = Counter(all_token)
+
+#   상위 20개 키워드 출력
+#count_top20 = pd.DataFrame(
+#    count_tokens.most_common(20),
+#    columns=['keyword', 'n']
+#    )
+#print(count_top20)
+
+#   대상품사: 일반명사, 고유명사, 동사, 형용사
+stnd_pos = ['NNG', 'NNP', 'VV', 'VA']
+stop_words = ['삼성전자', '대비', '따르']
+
+
+#   사용자 정의  tokenizer 생성
+def kiwi_tokenizer(text):
+    #   결측 데이터에 대해 빈 list 출력
+    if pd.isna(text): return []
+    
+    #   분석 데이터에 대해 문자열 처리
+    text = str(text)
+    
+    #   kiwi 형태소 분석 진행
+    #   kiwi 개체: 앞서 생성된 개체 활용
+    tokens = kiwi.tokenize(text)
+    
+    #   조건에 맞는 text 추출
+    token_list = [
+        token.form
+        for token in tokens
+        if token.tag in stnd_pos#   지정한 품사 사용
+        and token.form not in stop_words#   불용어 제외
+        ]
+    return token_list
