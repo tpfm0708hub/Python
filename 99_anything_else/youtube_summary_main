@@ -1,0 +1,739 @@
+# =========================================================
+# YouTube 새 영상 감지 → 한국어 자막 추출 → Ollama 요약 → Gmail 발송
+# 운영 폴더: D:/youtube_summary
+# 다중 채널 + 업로드일 기준 필터 반영 버전
+# =========================================================
+
+import os
+import re
+import yaml
+import base64
+import sqlite3
+import logging
+import requests
+import feedparser
+
+from pathlib import Path
+from datetime import datetime, timezone, timedelta
+from email.mime.text import MIMEText
+
+from youtube_transcript_api import (
+    YouTubeTranscriptApi,
+    TranscriptsDisabled,
+    NoTranscriptFound,
+    VideoUnavailable
+)
+
+from google.oauth2.credentials import Credentials
+from google.auth.transport.requests import Request
+from google_auth_oauthlib.flow import InstalledAppFlow
+from googleapiclient.discovery import build
+
+
+# =========================================================
+# 0. Gmail API 권한 범위
+# =========================================================
+
+SCOPES = ["https://www.googleapis.com/auth/gmail.send"]
+
+
+# =========================================================
+# 1. 설정 파일 로드
+# =========================================================
+
+def load_config(config_path="D:/youtube_summary/config.yaml"):
+    with open(config_path, "r", encoding="utf-8") as f:
+        return yaml.safe_load(f)
+
+
+# =========================================================
+# 2. 폴더 및 로그 설정
+# =========================================================
+
+def setup_environment(config):
+    paths = config["paths"]
+
+    Path(paths["base_dir"]).mkdir(parents=True, exist_ok=True)
+    Path(paths["transcript_dir"]).mkdir(parents=True, exist_ok=True)
+    Path(paths["summary_dir"]).mkdir(parents=True, exist_ok=True)
+    Path(Path(paths["log_file"]).parent).mkdir(parents=True, exist_ok=True)
+    Path(Path(paths["credentials_file"]).parent).mkdir(parents=True, exist_ok=True)
+
+    logging.basicConfig(
+        filename=paths["log_file"],
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(message)s",
+        encoding="utf-8"
+    )
+
+    console = logging.StreamHandler()
+    console.setLevel(logging.INFO)
+    console.setFormatter(
+        logging.Formatter("%(asctime)s [%(levelname)s] %(message)s")
+    )
+
+    root_logger = logging.getLogger("")
+
+    # Spyder나 반복 실행 환경에서 콘솔 로그가 중복 추가되는 것 방지
+    if not any(isinstance(handler, logging.StreamHandler) for handler in root_logger.handlers):
+        root_logger.addHandler(console)
+
+
+# =========================================================
+# 3. SQLite 처리 기록 DB
+# =========================================================
+
+def init_db(db_path):
+    conn = sqlite3.connect(db_path)
+    cur = conn.cursor()
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS processed_videos (
+            video_id TEXT PRIMARY KEY,
+            channel_name TEXT,
+            title TEXT,
+            url TEXT,
+            published TEXT,
+            status TEXT,
+            processed_at TEXT
+        )
+    """)
+
+    # 기존 DB에 channel_name 열이 없는 경우를 대비한 보완
+    cur.execute("PRAGMA table_info(processed_videos)")
+    columns = [row[1] for row in cur.fetchall()]
+
+    if "channel_name" not in columns:
+        cur.execute("ALTER TABLE processed_videos ADD COLUMN channel_name TEXT")
+
+    conn.commit()
+    conn.close()
+
+
+def is_processed(db_path, video_id):
+    conn = sqlite3.connect(db_path)
+    cur = conn.cursor()
+
+    cur.execute(
+        "SELECT COUNT(*) FROM processed_videos WHERE video_id = ?",
+        (video_id,)
+    )
+
+    count = cur.fetchone()[0]
+
+    conn.close()
+    return count > 0
+
+
+def mark_processed(db_path, video_id, channel_name, title, url, published, status):
+    conn = sqlite3.connect(db_path)
+    cur = conn.cursor()
+
+    cur.execute("""
+        INSERT OR REPLACE INTO processed_videos
+        (video_id, channel_name, title, url, published, status, processed_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    """, (
+        video_id,
+        channel_name,
+        title,
+        url,
+        published,
+        status,
+        datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    ))
+
+    conn.commit()
+    conn.close()
+
+
+# =========================================================
+# 4. YouTube 채널 ID 추출
+# =========================================================
+
+def extract_channel_id_from_url(channel_url):
+    """
+    @핸들 URL에서 채널 페이지 HTML을 읽고 UC로 시작하는 channel_id를 추출합니다.
+    YouTube HTML 구조가 바뀌면 실패할 수 있으므로,
+    실패 시 config.yaml에 channel_id를 직접 입력하면 됩니다.
+    """
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/120.0.0.0 Safari/537.36"
+        )
+    }
+
+    res = requests.get(channel_url, headers=headers, timeout=20)
+    res.raise_for_status()
+
+    html = res.text
+
+    patterns = [
+        r'"channelId":"(UC[^"]+)"',
+        r'"externalId":"(UC[^"]+)"',
+        r'<meta itemprop="channelId" content="(UC[^"]+)">'
+    ]
+
+    for pattern in patterns:
+        match = re.search(pattern, html)
+        if match:
+            return match.group(1)
+
+    raise ValueError(
+        "채널 ID를 자동으로 찾지 못했습니다. "
+        "config.yaml의 channel_id에 UC로 시작하는 채널 ID를 직접 입력해주세요."
+    )
+
+
+# =========================================================
+# 5. YouTube RSS에서 특정 채널의 영상 목록 가져오기
+# =========================================================
+
+def get_latest_videos_for_channel(config, channel_info):
+    """
+    특정 채널 1개의 RSS 영상 목록을 가져옵니다.
+    """
+    channel_id = channel_info.get("channel_id", "").strip()
+    channel_url = channel_info.get("channel_url", "").strip()
+    channel_display_name = channel_info.get(
+        "channel_display_name",
+        "알 수 없는 채널"
+    )
+
+    if not channel_id:
+        logging.info(
+            f"[{channel_display_name}] channel_id가 없어 채널 URL에서 자동 추출을 시도합니다."
+        )
+        channel_id = extract_channel_id_from_url(channel_url)
+        logging.info(f"[{channel_display_name}] 추출된 channel_id: {channel_id}")
+
+    feed_url = f"https://www.youtube.com/feeds/videos.xml?channel_id={channel_id}"
+    feed = feedparser.parse(feed_url)
+
+    videos = []
+
+    for entry in feed.entries:
+        video_url = entry.link
+        video_id = video_url.split("v=")[-1].split("&")[0]
+
+        title = entry.title
+        published = getattr(entry, "published", "")
+
+        videos.append({
+            "video_id": video_id,
+            "title": title,
+            "url": video_url,
+            "published": published,
+            "channel_display_name": channel_display_name
+        })
+
+    return videos
+
+
+# =========================================================
+# 6. 업로드일 기준 필터 함수
+# =========================================================
+
+def parse_youtube_published(published_text):
+    """
+    YouTube RSS의 published 값을 datetime 객체로 변환합니다.
+    예: 2026-05-06T09:01:13+00:00
+    """
+    if not published_text:
+        return None
+
+    try:
+        return datetime.fromisoformat(
+            published_text.replace("Z", "+00:00")
+        )
+    except Exception:
+        return None
+
+
+def is_within_published_range(video, config):
+    """
+    config.yaml의 published_after_days 기준으로
+    최근 n일 이내 업로드 영상인지 확인합니다.
+    """
+    days = config["youtube"].get("published_after_days", None)
+
+    if days is None:
+        return True, "작성일 필터 미사용"
+
+    published_dt = parse_youtube_published(video.get("published", ""))
+
+    if published_dt is None:
+        return False, "업로드일 파싱 실패"
+
+    now_utc = datetime.now(timezone.utc)
+    cutoff_dt = now_utc - timedelta(days=days)
+
+    if published_dt >= cutoff_dt:
+        return True, "작성일 기준 통과"
+
+    return False, f"작성일 기준 제외: {published_dt.isoformat()}"
+
+
+# =========================================================
+# 7. Shorts / Live 추정 제외
+# =========================================================
+
+def should_skip_video(video, config):
+    title_lower = video["title"].lower()
+    url_lower = video["url"].lower()
+
+    if config["youtube"].get("exclude_shorts", True):
+        shorts_keywords = ["#shorts", "shorts", "쇼츠"]
+        if any(k in title_lower or k in url_lower for k in shorts_keywords):
+            return True, "쇼츠 제외"
+
+    if config["youtube"].get("exclude_live_replay", True):
+        live_keywords = ["live", "라이브", "실시간", "생방송"]
+        if any(k in title_lower for k in live_keywords):
+            return True, "라이브 다시보기 제외"
+
+    return False, ""
+
+
+# =========================================================
+# 8. 한국어 자막 추출
+# =========================================================
+
+def get_korean_transcript(video_id):
+    """
+    한국어 자막만 요청합니다.
+    youtube-transcript-api 1.x 계열에서는
+    YouTubeTranscriptApi().fetch(video_id, languages=["ko"]) 방식을 사용합니다.
+    """
+    try:
+        ytt_api = YouTubeTranscriptApi()
+
+        fetched_transcript = ytt_api.fetch(
+            video_id,
+            languages=["ko"]
+        )
+
+        transcript_text = "\n".join(
+            snippet.text.replace("\n", " ").strip()
+            for snippet in fetched_transcript
+            if snippet.text and snippet.text.strip()
+        )
+
+        if not transcript_text.strip():
+            return None, "요약 불가(자막 없음)"
+
+        return transcript_text, "자막 추출 성공"
+
+    except NoTranscriptFound:
+        return None, "요약 불가(한국어 자막 없음)"
+
+    except TranscriptsDisabled:
+        return None, "요약 불가(자막 비활성화)"
+
+    except VideoUnavailable:
+        return None, "요약 불가(영상 접근 불가)"
+
+    except Exception as e:
+        return None, f"요약 불가(자막 추출 오류: {e})"
+
+
+# =========================================================
+# 9. 텍스트 저장
+# =========================================================
+
+def save_text(text, save_dir, filename):
+    save_path = Path(save_dir) / filename
+
+    with open(save_path, "w", encoding="utf-8") as f:
+        f.write(text)
+
+    return str(save_path)
+
+
+# =========================================================
+# 10. Ollama 요약
+# =========================================================
+
+def summarize_with_ollama(config, title, transcript_text):
+    ollama = config["ollama"]
+
+    prompt = f"""
+다음은 유튜브 영상의 한국어 자막입니다.
+
+영상 제목:
+{title}
+
+요청사항:
+- 전체 내용을 한국어로 요약해 주세요.
+- 반드시 5줄로 작성해 주세요.
+- 각 줄은 너무 길지 않게 작성해 주세요.
+- 광고 문구처럼 쓰지 말고, 핵심 내용을 객관적으로 정리해 주세요.
+- 번호는 1. 2. 3. 4. 5. 형식으로 붙여 주세요.
+
+자막:
+{transcript_text}
+"""
+
+    payload = {
+        "model": ollama["model"],
+        "prompt": prompt,
+        "stream": False,
+        "options": {
+            "temperature": 0.2
+        }
+    }
+
+    res = requests.post(
+        ollama["api_url"],
+        json=payload,
+        timeout=300
+    )
+
+    res.raise_for_status()
+
+    data = res.json()
+    summary = data.get("response", "").strip()
+
+    if not summary:
+        raise ValueError("Ollama 응답이 비어 있습니다.")
+
+    return summary
+
+
+# =========================================================
+# 11. Gmail API 인증
+# =========================================================
+
+def get_gmail_service(config):
+    paths = config["paths"]
+
+    credentials_file = paths["credentials_file"]
+    token_file = paths["token_file"]
+
+    creds = None
+
+    if os.path.exists(token_file):
+        creds = Credentials.from_authorized_user_file(token_file, SCOPES)
+
+    if not creds or not creds.valid:
+        if creds and creds.expired and creds.refresh_token:
+            creds.refresh(Request())
+
+        else:
+            if not os.path.exists(credentials_file):
+                raise FileNotFoundError(
+                    f"credentials.json 파일이 없습니다: {credentials_file}"
+                )
+
+            flow = InstalledAppFlow.from_client_secrets_file(
+                credentials_file,
+                SCOPES
+            )
+
+            creds = flow.run_local_server(port=0)
+
+        with open(token_file, "w", encoding="utf-8") as token:
+            token.write(creds.to_json())
+
+    service = build("gmail", "v1", credentials=creds)
+    return service
+
+
+# =========================================================
+# 12. Gmail 발송
+# =========================================================
+
+def send_email(config, subject, body):
+    service = get_gmail_service(config)
+
+    sender = config["email"]["sender"]
+    receiver = config["email"]["receiver"]
+
+    message = MIMEText(body, "plain", "utf-8")
+    message["To"] = receiver
+    message["From"] = sender
+    message["Subject"] = subject
+
+    raw_message = base64.urlsafe_b64encode(
+        message.as_bytes()
+    ).decode("utf-8")
+
+    send_body = {
+        "raw": raw_message
+    }
+
+    result = service.users().messages().send(
+        userId="me",
+        body=send_body
+    ).execute()
+
+    return result
+
+
+# =========================================================
+# 13. 이메일 제목 생성
+# =========================================================
+
+def make_email_subject(config, video_title):
+    date_tag = datetime.now().strftime("%y%m%d")
+    prefix = config["email"].get("subject_prefix", "유튜브요약")
+
+    safe_title = re.sub(r'[\\/:*?"<>|]', " ", video_title)
+    safe_title = re.sub(r"\s+", " ", safe_title).strip()
+
+    subject = f"{prefix}_{date_tag}_{safe_title}"
+
+    return subject[:180]
+
+
+# =========================================================
+# 14. 이메일 본문 생성
+# =========================================================
+
+def make_email_body(video, summary, transcript_status):
+    channel_name = video.get("channel_display_name", "알 수 없는 채널")
+
+    body = f"""유튜브 AI 요약 결과입니다.
+
+[채널]
+{channel_name}
+
+[영상 제목]
+{video["title"]}
+
+[영상 URL]
+{video["url"]}
+
+[업로드일]
+{video["published"]}
+
+[자막 상태]
+{transcript_status}
+
+[5줄 요약]
+{summary}
+
+--
+본 메일은 Python + Ollama + Gmail API 기반 자동 요약 프로그램으로 발송되었습니다.
+"""
+    return body
+
+
+# =========================================================
+# 15. 메인 실행
+# =========================================================
+
+def main():
+    config = load_config()
+    setup_environment(config)
+
+    db_path = config["paths"]["database_file"]
+    init_db(db_path)
+
+    logging.info("유튜브 요약 자동화 실행 시작")
+
+    channels = config["youtube"].get("channels", [])
+
+    if not channels:
+        logging.error("config.yaml의 youtube.channels에 채널 정보가 없습니다.")
+        return
+
+    all_videos = []
+
+    # -----------------------------------------------------
+    # 1. 여러 채널에서 영상 목록 수집
+    # -----------------------------------------------------
+    for channel_info in channels:
+        channel_name = channel_info.get("channel_display_name", "알 수 없는 채널")
+
+        try:
+            videos = get_latest_videos_for_channel(config, channel_info)
+            logging.info(f"[{channel_name}] RSS 영상 {len(videos)}개 수집")
+            all_videos.extend(videos)
+
+        except Exception as e:
+            logging.exception(f"[{channel_name}] YouTube 영상 목록 수집 실패: {e}")
+            continue
+
+    if not all_videos:
+        logging.info("수집된 영상이 없습니다.")
+        return
+
+    # -----------------------------------------------------
+    # 2. 업로드일 기준 정렬
+    # 오래된 영상부터 처리해야 메일 수신 순서가 자연스럽습니다.
+    # -----------------------------------------------------
+    all_videos = sorted(
+        all_videos,
+        key=lambda x: (
+            parse_youtube_published(x.get("published", ""))
+            or datetime.min.replace(tzinfo=timezone.utc)
+        )
+    )
+
+    max_videos = config["youtube"].get("max_videos_per_run", 10)
+    processed_count = 0
+
+    # -----------------------------------------------------
+    # 3. 영상별 처리
+    # -----------------------------------------------------
+    for video in all_videos:
+        if processed_count >= max_videos:
+            logging.info(f"이번 실행 최대 처리 개수 {max_videos}개에 도달하여 종료합니다.")
+            break
+
+        video_id = video["video_id"]
+        title = video["title"]
+        channel_name = video.get("channel_display_name", "알 수 없는 채널")
+
+        # -------------------------------------------------
+        # 이미 처리한 영상 제외
+        # -------------------------------------------------
+        if is_processed(db_path, video_id):
+            logging.info(f"[{channel_name}] 이미 처리한 영상 건너뜀: {title}")
+            continue
+
+        # -------------------------------------------------
+        # 작성일 기준 필터
+        # -------------------------------------------------
+        date_ok, date_reason = is_within_published_range(video, config)
+
+        if not date_ok:
+            logging.info(f"[{channel_name}] 작성일 기준 제외: {title} / {date_reason}")
+            continue
+
+        # -------------------------------------------------
+        # 쇼츠 / 라이브 제외
+        # -------------------------------------------------
+        skip, reason = should_skip_video(video, config)
+
+        if skip:
+            logging.info(f"[{channel_name}] 제외 대상 영상: {title} / 사유: {reason}")
+
+            mark_processed(
+                db_path,
+                video_id,
+                channel_name,
+                title,
+                video["url"],
+                video["published"],
+                reason
+            )
+            continue
+
+        logging.info(f"[{channel_name}] 신규 영상 처리 시작: {title}")
+
+        # -------------------------------------------------
+        # 한국어 자막 추출
+        # -------------------------------------------------
+        transcript_text, transcript_status = get_korean_transcript(video_id)
+
+        # -------------------------------------------------
+        # 자막이 없는 경우
+        # -------------------------------------------------
+        if transcript_text is None:
+            summary = transcript_status
+
+            email_body = make_email_body(
+                video,
+                summary,
+                transcript_status
+            )
+
+            subject = make_email_subject(config, title)
+
+            try:
+                send_email(config, subject, email_body)
+                logging.info(f"[{channel_name}] 자막 없음 안내 메일 발송 완료: {title}")
+
+                mark_processed(
+                    db_path,
+                    video_id,
+                    channel_name,
+                    title,
+                    video["url"],
+                    video["published"],
+                    transcript_status
+                )
+
+            except Exception as e:
+                logging.exception(f"[{channel_name}] 메일 발송 실패: {title} / 오류: {e}")
+
+            processed_count += 1
+            continue
+
+        # -------------------------------------------------
+        # 자막 원문 저장
+        # -------------------------------------------------
+        safe_video_id = re.sub(r"[^a-zA-Z0-9_-]", "_", video_id)
+        transcript_filename = f"{safe_video_id}_transcript.txt"
+
+        save_text(
+            transcript_text,
+            config["paths"]["transcript_dir"],
+            transcript_filename
+        )
+
+        # -------------------------------------------------
+        # Ollama 요약
+        # -------------------------------------------------
+        try:
+            summary = summarize_with_ollama(config, title, transcript_text)
+            logging.info(f"[{channel_name}] Ollama 요약 완료: {title}")
+
+        except Exception as e:
+            logging.exception(f"[{channel_name}] Ollama 요약 실패: {title} / 오류: {e}")
+            summary = f"요약 불가(Ollama 요약 오류: {e})"
+
+        # -------------------------------------------------
+        # 요약문 저장
+        # -------------------------------------------------
+        summary_filename = f"{safe_video_id}_summary.txt"
+
+        save_text(
+            summary,
+            config["paths"]["summary_dir"],
+            summary_filename
+        )
+
+        # -------------------------------------------------
+        # 이메일 발송
+        # -------------------------------------------------
+        email_body = make_email_body(
+            video,
+            summary,
+            transcript_status
+        )
+
+        subject = make_email_subject(config, title)
+
+        try:
+            send_email(config, subject, email_body)
+            logging.info(f"[{channel_name}] 요약 메일 발송 완료: {title}")
+
+            mark_processed(
+                db_path,
+                video_id,
+                channel_name,
+                title,
+                video["url"],
+                video["published"],
+                "요약 및 메일 발송 완료"
+            )
+
+        except Exception as e:
+            logging.exception(f"[{channel_name}] 메일 발송 실패: {title} / 오류: {e}")
+
+        processed_count += 1
+
+    logging.info("유튜브 요약 자동화 실행 종료")
+
+
+# =========================================================
+# 16. 직접 실행
+# =========================================================
+
+if __name__ == "__main__":
+    main()
