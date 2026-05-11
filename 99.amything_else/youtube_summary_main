@@ -1,6 +1,6 @@
 # =========================================================
 # YouTube 새 영상 감지 → 한국어 자막 추출 → Ollama 요약 → Gmail 발송
-# 운영 폴더: D:/youtube_summary
+# 운영 폴더: ./youtube_summary
 # 다중 채널 + 업로드일 기준 필터 반영 버전
 # =========================================================
 
@@ -41,7 +41,7 @@ SCOPES = ["https://www.googleapis.com/auth/gmail.send"]
 # 1. 설정 파일 로드
 # =========================================================
 
-def load_config(config_path="D:/youtube_summary/config.yaml"):
+def load_config(config_path="./youtube_summary/config.yaml"):
     with open(config_path, "r", encoding="utf-8") as f:
         return yaml.safe_load(f)
 
