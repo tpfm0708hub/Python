@@ -62,7 +62,7 @@ def main():
     end_date = "2026-05-15"
     
     # 저장될 폴더명 설정
-    output_dir = r"C:\Users\SAMSUNG\Desktop\yhfinance_crawl" 
+    output_dir = r".\yhfinance_crawl" 
     
     # 클래스 인스턴스화
     fetcher = StockDataFetcher()
