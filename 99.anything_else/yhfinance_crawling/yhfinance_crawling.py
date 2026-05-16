@@ -3,7 +3,7 @@ import pandas as pd
 import os
 
 class StockDataFetcher:
-    """주식 및 지수 데이터를 수집하는 모듈 (높은 응집도)"""
+    """주식 및 지수 데이터를 수집하는 모듈"""
     
     @staticmethod
     def fetch_daily_data(ticker: str, start_date: str, end_date: str) -> pd.DataFrame:
@@ -23,7 +23,7 @@ class StockDataFetcher:
 
 
 class DataExporter:
-    """데이터를 특정 포맷으로 저장하는 모듈 (높은 응집도)"""
+    """데이터를 특정 포맷으로 저장하는 모듈"""
     
     @staticmethod
     def save_to_csv(df: pd.DataFrame, file_path: str) -> None:
