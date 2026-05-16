@@ -1,6 +1,6 @@
 # =========================================================
 # run_youtube_summary.py
-# 위치: D:/project/youtube_summary/run_youtube_summary.py
+# 위치: ./project/youtube_summary/run_youtube_summary.py
 # 역할:
 #   1. 공통 함수 폴더를 import 경로에 추가
 #   2. config.yaml 로드
@@ -15,7 +15,7 @@ from pathlib import Path
 # ---------------------------------------------------------
 # 1. 공통 기능 폴더 import 경로 등록
 # ---------------------------------------------------------
-FUNCTION_DIR = Path("D:/project/function")
+FUNCTION_DIR = Path("./project/function")
 
 if str(FUNCTION_DIR) not in sys.path:
     sys.path.insert(0, str(FUNCTION_DIR))
