@@ -1,6 +1,6 @@
 # =========================================================
 # common_utils.py
-# 위치: D:/project/function/common_utils.py
+# 위치: ./project/function/common_utils.py
 # 역할:
 #   1. 설정 파일 로드
 #   2. 폴더 및 로거 설정
