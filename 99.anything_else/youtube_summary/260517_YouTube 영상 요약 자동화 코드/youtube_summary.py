@@ -1,6 +1,6 @@
 # =========================================================
 # youtube_summary.py
-# 위치: D:/project/youtube_summary/youtube_summary.py
+# 위치: ./project/youtube_summary/youtube_summary.py
 # 역할:
 #   1. 유튜브 RSS 수집
 #   2. 영상 필터링
