@@ -4,6 +4,8 @@ from kiwipiepy import Kiwi
 class SentimentAnalyzer:
     def __init__(self, vectorizer_file, model_file):
         #   모델 로딩
+        #   joblib: 파이썬에서 객체 저장
+        #           직렬화
         self.__vertorizer = joblib.load(vectorizer_file)
         self.__sa_model = joblib.load(model_file)
         
@@ -32,6 +34,9 @@ class SentimentAnalyzer:
             and token.form not in self.__stopwords
         ]
         return result
+    
+    def tokenizer(self, 본문):
+        return self.__korean_tokenizer(본문)
     
     def analyze_sentiment(self, 본문):
         #   전처리 및 특정 벡터 추출(__korean_tokenizer 자동 호출)
