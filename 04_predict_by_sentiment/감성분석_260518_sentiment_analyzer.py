@@ -35,9 +35,6 @@ class SentimentAnalyzer:
         ]
         return result
     
-    def tokenizer(self, 본문):
-        return self.__korean_tokenizer(본문)
-    
     def analyze_sentiment(self, 본문):
         #   전처리 및 특정 벡터 추출(__korean_tokenizer 자동 호출)
         body_fv = self.__vertorizer.transform([본문])
