@@ -62,5 +62,5 @@ def cnt_word(word_cnt_list, max_freq):
     print(f'제외 단어 (등장빈도 {max_freq}이하) : {except_cnt: ,}개 {except_freq: ,}번 등장')
     print(f'제외 단어 비율 : 단어 빈도 {(except_cnt/total_cnt) * 100:.2f}%/등장 빈도 {(except_freq/total_freq) * 100:.2f}%')
     use_cnt = total_cnt - except_cnt
-    useq_freq = except_freq/total_freq
-    print(f'제외 단어 반영 : {use_cnt:,}개 {useq_freq * 100:.2f}%')
+    useq_freq = total_freq - except_freq
+    print(f'제외 단어 반영 : {use_cnt:,}개 {(useq_freq/total_freq) * 100:.2f}%')
