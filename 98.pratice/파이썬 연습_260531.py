@@ -18,11 +18,10 @@ def load_sas(f_01):
     return pd.read_sas(f_01, format = 'sas7bdat', encoding=None)
 
 #  ≒ foreach %dopar%
-df_ls_001 = Parallel(n_jobs = cl)(delayed(load_sas)(f) for f in df_list_001)
+df_ls_001 = Parallel(n_jobs = cl)(delayed(load_sas)(f_01) for f_01 in df_list_001)
 
 #  ≒ bind_orws
 df_001 = pd.concat(df_ls_001, ignore_index = True)
-
 
 #   1) 고혈압 의산진단 여부 확인
 df_001['DI1_dg'].value_counts(dropna=False).sort_index()
