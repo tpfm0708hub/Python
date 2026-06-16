@@ -49,7 +49,7 @@ df_005 = df_004[df_004['BD1_11'] != 9]
 print(df_005['BS3_2'].describe())
 print(df_005['BS12_47_1'].describe())
 
-df_006 = df_005.rename(columns = {'smoke_current': 'smoke_current'})
+df_006 = df_005.rename(columns = {'current_smoking': 'smoke_current'})
 df_006['smoke_amt'] = df_006[['BS3_2', 'BS12_47_1']].sum(axis = 1)
 
 
